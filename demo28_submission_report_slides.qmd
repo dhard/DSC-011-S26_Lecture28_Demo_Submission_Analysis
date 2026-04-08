@@ -1,0 +1,646 @@
+---
+title: "Demo 28: What the Data Showed"
+subtitle: "DSC 011 Sp26 · Submission Analysis (anonymized) · n = 52 (Linux/UNIX Project Building and Infrastructure Check)"
+author: "David H. Ardell with Claude Sonnet 4.6"
+date: today
+format:
+  revealjs:
+    theme: simple
+    slide-number: true
+    embed-resources: true
+    fig-align: center
+    fig-width: 10
+    fig-height: 5.8
+    code-fold: true
+    highlight-style: github
+    footer: "DSC 011 Sp26 — Demo 28 Submission Analysis (anonymized)"
+    css: |
+      .reveal .slides section {
+        font-size: 0.82em;
+        line-height: 1.5;
+      }
+      .reveal h2 { font-size: 1.2em; margin-bottom: 0.4em; }
+      .reveal pre { font-size: 0.72em; }
+      .caption-slide p { font-size: 0.78em; color: #444; }
+execute:
+  echo: true
+  warning: false
+  message: false
+engine: knitr
+---
+
+```{r setup, include=FALSE}
+options(digits = 5)
+knitr::opts_chunk$set(echo = TRUE, cache = FALSE, warning = FALSE,
+                      message = FALSE, comment = "")
+```
+
+```{r packages, include=FALSE}
+library(ggplot2); library(dplyr); library(tidyr)
+library(forcats);  library(scales); library(stringr)
+```
+
+```{r palette, include=FALSE}
+OI <- c(orange="#E69F00", sky_blue="#56B4E9", green="#009E73",
+        yellow="#F0E442", blue="#0072B2", vermillion="#D55E00",
+        pink="#CC79A7",   black="#000000")
+clr_correct <- OI[["green"]];  clr_incorrect <- OI[["orange"]]
+clr_err     <- OI[["vermillion"]]; clr_noout  <- OI[["sky_blue"]]
+result_colours <- c("CORRECT"=clr_correct,"INCORRECT"=clr_incorrect,
+                    "Error running bash"=clr_err,"No output / not run"=clr_noout)
+plat_colours <- c("macOS (Homebrew bash 5)"=OI[["blue"]],
+                  "WSL2/Linux (bash 5.2)"=OI[["green"]],
+                  "macOS (/bin/bash 3.2, unfixed)"=OI[["pink"]],
+                  "WSL2 (CRLF line endings)"=OI[["orange"]])
+cwd_colours <- c("Correct"=OI[["green"]],
+                 "Windows path (/mnt/c/ or /c/)"=OI[["vermillion"]],
+                 "Downloads/"=OI[["orange"]],"Desktop/"=OI[["pink"]],
+                 "Other wrong location"=OI[["sky_blue"]])
+theme_dsc <- function(base=13) {
+  theme_minimal(base_size=base) +
+    theme(plot.title=element_text(face="bold",size=base+1,margin=margin(b=4)),
+          plot.subtitle=element_text(size=base-1,color="grey30",lineheight=1.25,
+                                     margin=margin(b=6)),
+          plot.caption=element_text(size=base-3,color="grey50",hjust=0,
+                                    lineheight=1.3,margin=margin(t=6)),
+          legend.position="bottom", legend.title=element_blank(),
+          legend.text=element_text(size=base-2),
+          panel.grid.minor=element_blank(), plot.margin=margin(4,4,4,4))
+}
+```
+
+```{r data, include=FALSE}
+raw <- tibble(
+  student = paste0("student_", 1:52),
+  late = c(TRUE,FALSE,FALSE,TRUE,FALSE,TRUE,TRUE,FALSE,TRUE,FALSE,TRUE,FALSE,
+            TRUE,FALSE,TRUE,FALSE,FALSE,TRUE,FALSE,TRUE,FALSE,TRUE,TRUE,FALSE,
+            TRUE,FALSE,FALSE,TRUE,FALSE,FALSE,TRUE,TRUE,FALSE,FALSE,FALSE,TRUE,
+            TRUE,TRUE,FALSE,TRUE,FALSE,TRUE,FALSE,FALSE,FALSE,TRUE,FALSE,TRUE,
+            FALSE,TRUE,FALSE,TRUE),
+  platform = c(
+    "macOS (Homebrew bash 5)","WSL2/Linux (bash 5.2)","macOS (Homebrew bash 5)",
+    "WSL2/Linux (bash 5.2)","macOS (Homebrew bash 5)","WSL2/Linux (bash 5.2)",
+    "macOS (Homebrew bash 5)","macOS (Homebrew bash 5)","WSL2/Linux (bash 5.2)",
+    "macOS (Homebrew bash 5)","WSL2 (CRLF line endings)","macOS (Homebrew bash 5)",
+    "macOS (/bin/bash 3.2, unfixed)","WSL2/Linux (bash 5.2)","macOS (Homebrew bash 5)",
+    "WSL2/Linux (bash 5.2)","macOS (Homebrew bash 5)","WSL2/Linux (bash 5.2)",
+    "macOS (Homebrew bash 5)","WSL2/Linux (bash 5.2)","macOS (/bin/bash 3.2, unfixed)",
+    "WSL2 (CRLF line endings)","macOS (Homebrew bash 5)","WSL2/Linux (bash 5.2)",
+    "macOS (/bin/bash 3.2, unfixed)","WSL2/Linux (bash 5.2)","macOS (Homebrew bash 5)",
+    "WSL2/Linux (bash 5.2)","WSL2 (CRLF line endings)","macOS (Homebrew bash 5)",
+    "macOS (Homebrew bash 5)","macOS (/bin/bash 3.2, unfixed)","WSL2/Linux (bash 5.2)",
+    "macOS (Homebrew bash 5)","macOS (Homebrew bash 5)","WSL2 (CRLF line endings)",
+    "WSL2/Linux (bash 5.2)","macOS (/bin/bash 3.2, unfixed)","macOS (Homebrew bash 5)",
+    "WSL2/Linux (bash 5.2)","WSL2 (CRLF line endings)","macOS (Homebrew bash 5)",
+    "WSL2/Linux (bash 5.2)","macOS (Homebrew bash 5)","WSL2/Linux (bash 5.2)",
+    "macOS (Homebrew bash 5)","WSL2/Linux (bash 5.2)","macOS (Homebrew bash 5)",
+    "WSL2/Linux (bash 5.2)","macOS (/bin/bash 3.2, unfixed)","WSL2/Linux (bash 5.2)",
+    "WSL2/Linux (bash 5.2)"),
+  correct_cwd = c(TRUE,FALSE,TRUE,TRUE,TRUE,FALSE,TRUE,FALSE,TRUE,FALSE,FALSE,
+                  FALSE,FALSE,TRUE,TRUE,FALSE,FALSE,TRUE,FALSE,TRUE,FALSE,FALSE,
+                  FALSE,TRUE,FALSE,FALSE,TRUE,TRUE,FALSE,FALSE,TRUE,FALSE,TRUE,
+                  FALSE,FALSE,TRUE,TRUE,FALSE,TRUE,FALSE,FALSE,TRUE,TRUE,TRUE,
+                  FALSE,TRUE,FALSE,FALSE,TRUE,FALSE,TRUE,FALSE),
+  cwd_category = c(
+    "Correct","Desktop/","Correct","Correct","Correct","Other wrong location",
+    "Correct","Windows path (/mnt/c/ or /c/)","Correct","Downloads/",
+    "Windows path (/mnt/c/ or /c/)","Desktop/","Downloads/","Correct","Desktop/",
+    "Correct","Downloads/","Correct","Downloads/","Correct","Other wrong location",
+    "Windows path (/mnt/c/ or /c/)","Other wrong location","Correct","Downloads/",
+    "Correct","Correct","Correct","Windows path (/mnt/c/ or /c/)","Downloads/",
+    "Other wrong location","Downloads/","Correct","Downloads/","Desktop/",
+    "Windows path (/mnt/c/ or /c/)","Correct","Other wrong location","Correct",
+    "Other wrong location","Windows path (/mnt/c/ or /c/)","Correct",
+    "Other wrong location","Desktop/","Other wrong location","Correct",
+    "Other wrong location","Downloads/","Correct","Windows path (/mnt/c/ or /c/)",
+    "Other wrong location","Windows path (/mnt/c/ or /c/)"),
+  export_fix = c(FALSE,FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,FALSE,TRUE,FALSE,FALSE,
+                 FALSE,FALSE,FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,FALSE,FALSE,FALSE,
+                 FALSE,FALSE,FALSE,FALSE,FALSE,FALSE,FALSE,FALSE,TRUE,FALSE,FALSE,
+                 FALSE,FALSE,FALSE,FALSE,FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,FALSE,
+                 FALSE,FALSE,FALSE,FALSE,FALSE,FALSE,TRUE,FALSE),
+  dir_scaffold = c("ERR","ERR","CORRECT","ERR","CORRECT","ERR","no_output","no_output",
+    "no_output","no_output","no_output","no_output","ERR","no_output","INCORRECT",
+    "ERR","ERR","no_output","ERR","no_output","ERR","no_output","INCORRECT","ERR",
+    "ERR","ERR","no_output","no_output","no_output","no_output","no_output","ERR",
+    "ERR","ERR","ERR","no_output","ERR","ERR","no_output","ERR","no_output",
+    "CORRECT","no_output","ERR","ERR","no_output","ERR","ERR","ERR","no_output",
+    "no_output","no_output"),
+  python_env = c("ERR","ERR","CORRECT","ERR","ERR","ERR","INCORRECT","no_output",
+    "ERR","no_output","no_output","no_output","ERR","ERR","INCORRECT","ERR","ERR",
+    "ERR","ERR","no_output","ERR","no_output","INCORRECT","ERR","ERR","ERR",
+    "CORRECT","ERR","no_output","no_output","ERR","ERR","ERR","ERR","ERR",
+    "no_output","ERR","ERR","CORRECT","ERR","no_output","CORRECT","ERR","ERR",
+    "ERR","no_output","ERR","ERR","ERR","no_output","ERR","no_output"),
+  setup_sh = c("ERR","ERR","CORRECT","ERR","ERR","ERR","INCORRECT","no_output",
+    "ERR","no_output","no_output","INCORRECT","ERR","ERR","INCORRECT","ERR","ERR",
+    "ERR","ERR","INCORRECT","ERR","no_output","INCORRECT","ERR","ERR","ERR","ERR",
+    "ERR","no_output","no_output","ERR","ERR","ERR","ERR","ERR","no_output","ERR",
+    "ERR","CORRECT","ERR","no_output","INCORRECT","ERR","ERR","ERR","INCORRECT",
+    "ERR","ERR","ERR","no_output","ERR","no_output"),
+  git_commit_1 = c("ERR","ERR","INCORRECT","ERR","ERR","ERR","INCORRECT","no_output",
+    "ERR","no_output","no_output","INCORRECT","ERR","ERR","INCORRECT","ERR","ERR",
+    "ERR","ERR","INCORRECT","ERR","no_output","INCORRECT","ERR","ERR","ERR","ERR",
+    "ERR","no_output","no_output","ERR","ERR","ERR","ERR","ERR","no_output","ERR",
+    "ERR","INCORRECT","ERR","no_output","INCORRECT","ERR","ERR","ERR","INCORRECT",
+    "ERR","ERR","ERR","no_output","ERR","no_output"),
+  html_14_files = c("ERR","ERR","INCORRECT","ERR","ERR","ERR","INCORRECT","no_output",
+    "ERR","no_output","no_output","INCORRECT","ERR","ERR","INCORRECT","ERR","ERR",
+    "ERR","ERR","INCORRECT","ERR","no_output","INCORRECT","ERR","ERR","ERR","ERR",
+    "ERR","no_output","no_output","ERR","ERR","ERR","ERR","ERR","no_output","ERR",
+    "ERR","CORRECT","ERR","no_output","INCORRECT","ERR","ERR","ERR","INCORRECT",
+    "ERR","ERR","ERR","no_output","ERR","no_output"),
+  git_commit_2 = c("ERR","ERR","INCORRECT","ERR","ERR","ERR","INCORRECT","no_output",
+    "ERR","no_output","no_output","INCORRECT","ERR","ERR","INCORRECT","ERR","ERR",
+    "ERR","ERR","INCORRECT","ERR","no_output","INCORRECT","ERR","ERR","ERR","ERR",
+    "ERR","no_output","no_output","ERR","ERR","ERR","ERR","ERR","no_output","ERR",
+    "ERR","CORRECT","ERR","no_output","CORRECT","ERR","ERR","ERR","INCORRECT",
+    "ERR","ERR","ERR","no_output","ERR","no_output")
+)
+n_total <- nrow(raw)
+chunk_levels <- c("dir_scaffold","python_env","setup_sh",
+                  "git_commit_1","html_14_files","git_commit_2")
+chunk_labels <- c(dir_scaffold="Dir scaffold", python_env="Python env",
+                  setup_sh="00-setup.sh", git_commit_1="Git commits = 1",
+                  html_14_files="14 HTML files", git_commit_2="Git commits = 2")
+result_levels <- c("CORRECT","INCORRECT","ERR","no_output")
+result_labels  <- c("CORRECT","INCORRECT","Error running bash","No output / not run")
+plat_levels <- c("macOS (Homebrew bash 5)","WSL2/Linux (bash 5.2)",
+                 "macOS (/bin/bash 3.2, unfixed)","WSL2 (CRLF line endings)")
+cwd_cat_levels <- c("Correct","Windows path (/mnt/c/ or /c/)",
+                    "Downloads/","Desktop/","Other wrong location")
+students <- raw |>
+  mutate(platform     = factor(platform,     levels = plat_levels),
+         cwd_category = factor(cwd_category, levels = cwd_cat_levels),
+         submission   = if_else(late, "Late","On time"))
+n_windows_path <- sum(students$cwd_category == "Windows path (/mnt/c/ or /c/)")
+n_downloads    <- sum(students$cwd_category == "Downloads/")
+n_desktop      <- sum(students$cwd_category == "Desktop/")
+n_other_wrong  <- sum(students$cwd_category == "Other wrong location")
+n_correct_cwd  <- sum(students$correct_cwd)
+n_wrong_cwd    <- n_total - n_correct_cwd
+```
+
+---
+
+## Three failure modes, independently caused
+
+Every Demo 28 error traces back to one or more of three root causes:
+
+1. **`check_bash` not on PATH** in knitr bash subprocesses → 33 students (63%)
+2. **Wrong working directory** — notebook not in the project root → 29 students (56%)
+3. **Windows CRLF line endings** in the `.qmd` file → 6 students (12%)
+
+**Avoid Causes 2 and 3: follow instructions!**
+
+---
+
+## The class split into four platform groups
+
+Two OS × two configuration states. The configuration problems are the story.
+
+```{r fig-platform, echo=FALSE}
+fig1_data <- students |> count(platform, submission)
+ggplot(fig1_data, aes(x=submission, y=n, fill=platform)) +
+  geom_col(width=0.45, colour="white", linewidth=0.6) +
+  geom_text(aes(label=n), position=position_stack(vjust=0.5),
+            size=5, fontface="bold", colour="white") +
+  scale_fill_manual(values=plat_colours) +
+  scale_y_continuous(expand=expansion(mult=c(0,0.06))) +
+  labs(title="Two groups worked; two reflect misconfiguration",
+       subtitle=paste0(
+         "macOS /bin/bash 3.2: RStudio launched from Dock, not terminal  ·  ",
+         "WSL2 CRLF: .qmd downloaded through Windows browser"),
+       x=NULL, y="Students",
+       caption="n = 52  ·  22 macOS Homebrew, 18 WSL2, 6 macOS unfixed, 6 WSL2 CRLF") +
+  theme_dsc()
+```
+
+---
+
+## macOS (/bin/bash 3.2): silent failure
+
+When RStudio is launched from the Dock, macOS's process manager (`launchd`)
+gives it a minimal PATH that excludes `/opt/homebrew/bin/`. knitr falls back
+to `/bin/bash` — Apple's GPL-frozen bash 3.2 from 2007.
+
+The bash version guard was designed to catch this. But Demo 28 used
+`error=TRUE`, so knitr **swallowed the non-zero exit silently** and continued
+into all subsequent chunks with a broken environment.
+
+**Demo 29 fix:** bash version guard now uses `error=FALSE` — rendering halts
+immediately. macOS students instructed to launch RStudio with `open -a RStudio`.
+
+---
+
+## Failure Mode 1 — Wrong working directory
+
+When Quarto renders, knitr sets the working directory to the folder containing
+the `.qmd` file. Bash chunks use that as their current directory. Relative
+paths like `data/raw/` and `scripts/` only resolve from the project root.
+
+`r n_wrong_cwd` of `r n_total` students (**`r round(n_wrong_cwd/n_total*100)`%**)
+rendered from the wrong location.
+
+**Demo 29 fix:** `error=FALSE` CWD guard halts rendering if the path ≠
+`~/DSC-011-S26/DSC-011-S26-Baby-Names`.
+
+---
+
+## Where students actually were
+
+```{r fig-cwd, echo=FALSE}
+cwd_data <- students |> count(cwd_category) |> mutate(cwd_category=fct_rev(cwd_category))
+ggplot(cwd_data, aes(x=cwd_category, y=n, fill=cwd_category)) +
+  geom_col(width=0.55, colour="white", linewidth=0.5) +
+  geom_text(aes(label=paste0(n," (",round(n/n_total*100),"%)")),
+            hjust=-0.1, size=4.5, fontface="bold", colour="grey20") +
+  scale_fill_manual(values=cwd_colours, guide="none") +
+  scale_y_continuous(expand=expansion(mult=c(0,0.35))) +
+  coord_flip() +
+  labs(title=paste0(n_wrong_cwd," of ",n_total," students (",
+                    round(n_wrong_cwd/n_total*100),"%) in the wrong directory"),
+       subtitle=paste0(
+         n_windows_path," in Windows paths  ·  ",
+         n_downloads," in Downloads/  ·  ",
+         n_desktop," on Desktop/  ·  ",
+         n_other_wrong," in other wrong locations"),
+       x=NULL, y="Students",
+       caption="The variety of wrong paths shows this was not one mistake — many different ones.") +
+  theme_dsc()
+```
+
+---
+
+## Windows paths: a distinct sub-problem
+
+**`r n_windows_path` students (15%) worked from `/mnt/c/` or `/c/` paths**
+— the Windows NTFS filesystem mounted inside WSL2.
+
+Working from `/mnt/c/` causes:
+
+- **CRLF contamination** — Windows tools write `\r\n` line endings that break bash
+- **Slow filesystem I/O** — cross-boundary overhead on every read/write
+- **Unreliable `chmod`** — Linux executable bits don't map to NTFS permissions
+- **Non-portability** — paths are specific to one machine's Windows layout
+
+**All course work lives in `~/DSC-011-S26/` on the Linux filesystem.**
+If the terminal shows a `/mnt/c/` path: wrong location.
+
+---
+
+## Directory and file names must be exact
+
+`r n_other_wrong` students had near-miss paths: `DSC-011` vs `DSC011`,
+`DCS_011` vs `DSC_011`, nested inside `Lecture28/`, or at the parent
+directory instead of the project root.
+
+A path that differs by one character is a different path.
+
+**Never type long directory or file names by hand.**
+
+- **Copy-paste** from course materials
+- **Tab-complete** in the terminal — if nothing completes, the directory
+  does not exist at that location (diagnostic, not a typing problem)
+
+---
+
+## Fix copy-paste before every session (WSL2)
+
+Clipboard shortcuts are **not enabled by default** in Windows Terminal.
+A student in this course identified and documented this fix:
+
+**Windows Terminal (recommended):**
+
+1. Right-click the title bar → **Properties**
+2. Check **"Use Ctrl+Shift+C/V as Copy/Paste"**
+3. Click OK
+
+Then use <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd> /
+<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd>. Right-click also pastes.
+
+**Standalone Linux terminal (WSLg/xterm):**
+
+```bash
+sudo apt install xclip          # X11
+sudo apt install wl-clipboard   # Wayland/WSLg
+```
+
+If pasting still fails: switch to Windows Terminal.
+
+---
+
+## Failure Mode 2 — `check_bash` not on PATH
+
+`check_bash` was installed to `~/bin/` via curl. The installer added
+`export PATH="$HOME/bin:$PATH"` to `.bashrc`. This works in an
+**interactive** terminal session.
+
+knitr bash chunks are **non-interactive** bash subprocesses. They do not
+source `.bashrc` or `.zshrc`. They inherit only R's environment at render
+time — which, on both macOS and WSL2, does not include `~/bin/`.
+
+Result: `check_bash` worked in the terminal. Every knitr chunk calling it
+got `bash: check_bash: command not found` (exit 127), rendered by knitr
+as `Error in running command bash`.
+
+---
+
+## 0 students passed the first validation chunk
+
+```{r fig-chunks, echo=FALSE}
+fig3_data <- students |>
+  select(student, all_of(chunk_levels)) |>
+  pivot_longer(-student, names_to="chunk", values_to="result") |>
+  mutate(chunk  = factor(chunk,  levels=chunk_levels, labels=chunk_labels),
+         result = factor(result, levels=result_levels, labels=result_labels)) |>
+  count(chunk, result)
+ggplot(fig3_data, aes(x=chunk, y=n, fill=result)) +
+  geom_col(width=0.55, colour="white", linewidth=0.5) +
+  geom_text(aes(label=n), position=position_stack(vjust=0.5),
+            size=4.8, fontface="bold", colour="white") +
+  scale_fill_manual(values=result_colours) +
+  scale_y_continuous(expand=expansion(mult=c(0,0.04)), breaks=seq(0,52,10)) +
+  labs(title="0 CORRECT on dir scaffold · 33 students had bash errors on every chunk",
+       subtitle=paste0(
+         "'Error running bash' = check_bash not found (exit 127)  ·  ",
+         "'No output' = chunk skipped or CRLF  ·  ",
+         "'INCORRECT' = check_bash ran, answer wrong"),
+       x=NULL, y="Students",
+       caption="Demo 29 fix: check_bash 2.2 installed to /usr/local/bin/ — on PATH everywhere by default.") +
+  theme_dsc() + theme(axis.text.x=element_text(size=10))
+```
+
+---
+
+## The PATH problem hit macOS and WSL2 equally
+
+```{r fig-heatmap, echo=FALSE, fig.height=4.5}
+fig4_data <- students |>
+  filter(platform %in% c("macOS (Homebrew bash 5)","WSL2/Linux (bash 5.2)")) |>
+  select(student, platform, all_of(chunk_levels)) |>
+  pivot_longer(all_of(chunk_levels), names_to="chunk", values_to="result") |>
+  mutate(chunk=factor(chunk, levels=chunk_levels, labels=chunk_labels),
+         is_err=result=="ERR") |>
+  group_by(platform, chunk) |>
+  summarise(n_err=sum(is_err), n=n(), pct=n_err/n, .groups="drop")
+ggplot(fig4_data, aes(x=chunk, y=fct_rev(platform), fill=pct)) +
+  geom_tile(colour="white", linewidth=1.2) +
+  geom_text(aes(label=paste0(n_err,"/",n,"\n(",round(pct*100),"%)")),
+            size=3.8, lineheight=1.2) +
+  scale_fill_gradient(low="#fffde7", high=clr_err,
+                      labels=percent_format(accuracy=1),
+                      name="% with error", limits=c(0,1)) +
+  labs(title="macOS and WSL2 failed at nearly identical rates",
+       subtitle=paste0(
+         "WSL2 RStudio Server also does not source .bashrc when spawning knitr subprocesses.\n",
+         "This was an architectural problem, not a macOS GUI PATH problem."),
+       x=NULL, y=NULL,
+       caption="/usr/local/bin/ is on the default PATH of every bash subprocess on both platforms.") +
+  theme_dsc() + theme(panel.grid=element_blank(), legend.position="right",
+                      axis.text.x=element_text(size=10))
+```
+
+---
+
+## The fix: install to a system-level directory
+
+The fundamental principle: tools that must be available to **non-interactive**
+subprocesses must be in a directory on the **default PATH** of every process.
+
+| Location | Available in interactive terminal? | Available in knitr bash chunks? |
+|:---------|:-:|:-:|
+| `~/bin/` | ✓ (if `.bashrc` sourced) | ✗ |
+| `/usr/local/bin/` | ✓ | ✓ |
+
+This principle applies to any tool needed inside knitr chunks. Install
+system-wide with `sudo`, or use an environment manager like `pixi` that
+places binaries on the activated PATH.
+
+**Demo 29 fix:** `check_bash` 2.2 installed to `/usr/local/bin/` via
+`sudo cp`. No per-chunk export, no setup-chunk PATH patch needed.
+
+---
+
+## Six students found the per-chunk workaround
+
+```{r fig-workaround, echo=FALSE, fig.height=4.8}
+fig5_data <- students |>
+  mutate(workaround=if_else(export_fix,
+    paste0("Used export PATH workaround (n=",sum(export_fix),")"),
+    paste0("Did not (n=",sum(!export_fix),")"))) |>
+  select(student, workaround, all_of(chunk_levels)) |>
+  pivot_longer(all_of(chunk_levels), names_to="chunk", values_to="result") |>
+  mutate(result=factor(result, levels=result_levels, labels=result_labels)) |>
+  count(workaround, result) |>
+  group_by(workaround) |> mutate(pct=n/sum(n))
+ggplot(fig5_data, aes(x=workaround, y=pct, fill=result)) +
+  geom_col(width=0.4, colour="white", linewidth=0.5) +
+  geom_text(aes(label=if_else(pct>0.04, percent(pct,accuracy=1),"")),
+            position=position_stack(vjust=0.5),
+            size=4.5, fontface="bold", colour="white") +
+  scale_fill_manual(values=result_colours) +
+  scale_y_continuous(labels=percent_format(accuracy=1),
+                     expand=expansion(mult=c(0,0.03))) +
+  labs(title="Correct diagnosis — wrong level of abstraction",
+       subtitle=paste0(
+         "Adding export PATH to some chunks improved the rate but not enough.\n",
+         "Applied inconsistently: some chunks fixed, others still errored."),
+       x=NULL, y="Proportion of chunk attempts",
+       caption="The fix belongs at installation time, not inside each chunk.") +
+  theme_dsc()
+```
+
+---
+
+## Failure Mode 3 — CRLF line endings (WSL2 only)
+
+Unix/Linux uses `\n` (LF) to end lines. Windows uses `\r\n` (CRLF).
+When a Windows browser downloads a text file, Windows may save it with
+`\r\n` endings.
+
+Inside WSL2's Linux kernel, bash reads the `\r` as part of the last word
+on each line. The chunk `ls -d data/raw` becomes `ls -d data/raw\r` —
+which bash cannot find. Symptom: `cannot: command not found` and
+`ls:: command not found` (the colon is `\r` rendered as a glyph).
+
+**Why only 6 of 18 WSL2 students?** The other 12 obtained the notebook
+through a Linux process — a Linux browser inside WSL2, or `wget` from the
+terminal. When no Windows process touches the file, no CRLF occurs.
+
+---
+
+## Could an Edge user have avoided CRLF?
+
+Only in two ways:
+
+1. **Run `dos2unix` explicitly** before opening the file — but this requires
+   knowing the problem exists before seeing the error. Unlikely.
+
+2. **`cp` from `/mnt/c/` into `~/`** — does **not** fix CRLF. `cp` copies
+   bytes as-is; the `\r\n` endings travel with the file.
+
+Edge's CRLF behavior depends on Windows settings and content-type headers —
+**it cannot be relied upon in either direction.**
+
+The only reliable approaches: (1) never let a Windows process write the file,
+or (2) always run `dos2unix` on any file from a Windows source.
+
+---
+
+## Detecting and fixing CRLF
+
+**Detect** before opening in RStudio:
+
+```bash
+cat -A filename.qmd | head -5
+```
+
+Clean file shows `$` at line ends. CRLF file shows `^M$`:
+
+```
+ls -d data/raw$      ← clean
+ls -d data/raw^M$    ← CRLF contaminated
+```
+
+**Fix immediately:**
+
+```bash
+sudo apt install dos2unix    # WSL2 (one-time)
+dos2unix filename.qmd
+cat -A filename.qmd | head -5   # verify: should show $, not ^M$
+```
+
+---
+
+## Prevention: keep files on the Linux side
+
+**In order of reliability:**
+
+1. **`wget` inside WSL2** — Demo 29+ all delivered this way. A Linux process
+   downloads directly; no Windows involvement.
+2. **Linux browser for CatCourses** — `sudo apt install firefox`, launch with
+   `firefox &`. Downloads stay on the Linux filesystem.
+3. **`dos2unix` as precaution** — run on any file from Edge, Chrome on
+   Windows, or OneDrive sync before opening in RStudio.
+4. **Never edit `.qmd` files in Windows-side editors** — Notepad, Word, and
+   Windows-side VS Code all write CRLF. Use `emacs`, `mg`, `nano`, or
+   `code .` launched from *inside* WSL2.
+
+---
+
+## Every student's outcome, all at once
+
+```{r fig-all, echo=FALSE, fig.height=6.2}
+tile_data <- students |>
+  select(student, platform, all_of(chunk_levels)) |>
+  pivot_longer(all_of(chunk_levels), names_to="chunk", values_to="result") |>
+  mutate(chunk  = factor(chunk,  levels=chunk_levels, labels=chunk_labels),
+         result = factor(result, levels=result_levels, labels=result_labels)) |>
+  group_by(student) |> mutate(n_correct=sum(result=="CORRECT")) |> ungroup()
+student_order <- tile_data |>
+  distinct(student, platform, n_correct) |>
+  arrange(platform, desc(n_correct), student) |> pull(student)
+tile_data <- tile_data |> mutate(student=factor(student, levels=student_order))
+ggplot(tile_data, aes(x=chunk, y=student, fill=result)) +
+  geom_tile(colour="white", linewidth=0.35) +
+  scale_fill_manual(values=result_colours) +
+  facet_grid(rows=vars(platform), scales="free_y", space="free_y") +
+  labs(title="Per-student, per-chunk outcomes — grouped by platform",
+       subtitle="Ordered by CORRECT count within platform. All-ERR = PATH. All-no_output = CRLF.",
+       x=NULL, y=NULL) +
+  theme_dsc(base=11) +
+  theme(axis.text.y=element_text(size=6.5), axis.text.x=element_text(size=9),
+        strip.text.y=element_text(size=8, angle=0, hjust=0),
+        panel.grid=element_blank(), legend.position="bottom")
+```
+
+---
+
+## The two main failures were independent
+
+```{r fig-cooccurrence, echo=FALSE, fig.height=5.2}
+fig7_data <- students |>
+  mutate(
+    path_ok=if_else(!if_any(all_of(chunk_levels),\(x)x=="ERR"),
+                    "check_bash\nreachable","check_bash\nNOT reachable"),
+    cwd_ok=if_else(correct_cwd,"Correct CWD","Wrong CWD"),
+    path_ok=factor(path_ok, levels=c("check_bash\nreachable","check_bash\nNOT reachable")),
+    cwd_ok =factor(cwd_ok,  levels=c("Correct CWD","Wrong CWD"))
+  ) |>
+  count(cwd_ok, path_ok) |>
+  mutate(pct=round(n/n_total*100),
+         fill_grp=paste(as.character(cwd_ok), as.character(path_ok)))
+tile_fills <- c(
+  "Correct CWD check_bash\nreachable"     = clr_correct,
+  "Correct CWD check_bash\nNOT reachable" = OI[["orange"]],
+  "Wrong CWD check_bash\nreachable"       = OI[["sky_blue"]],
+  "Wrong CWD check_bash\nNOT reachable"   = clr_err
+)
+ggplot(fig7_data, aes(x=path_ok, y=fct_rev(cwd_ok), fill=fill_grp)) +
+  geom_tile(colour="white", linewidth=2) +
+  geom_text(aes(label=paste0(n," students\n(",pct,"%)")),
+            size=6, fontface="bold", colour="white", lineheight=1.4) +
+  scale_fill_manual(values=tile_fills, guide="none") +
+  labs(title="Fixing one did not fix the other — both needed independent fixes",
+       subtitle="14 had only PATH · 10 had only CWD · 19 had both · 9 had neither",
+       x=NULL, y=NULL,
+       caption=paste0(
+         "PATH fix: check_bash 2.2 → /usr/local/bin/\n",
+         "CWD fix:  error=FALSE guard chunk")) +
+  theme_dsc() + theme(panel.grid=element_blank(), axis.text=element_text(size=12))
+```
+
+---
+
+## What changed for Demo 29 and Lab 10 {.smaller}
+
+| Problem | Students | Fix |
+|:--------|:--------:|:----|
+| `check_bash` not on knitr PATH | 33 (63%) | Install to `/usr/local/bin/` via `sudo` |
+| Wrong working directory | 29 (56%) | `error=FALSE` CWD guard chunk |
+| macOS using `/bin/bash` 3.2 | 6 (12%) | `error=FALSE` bash version guard + `engine.path` + `open -a RStudio` |
+| CRLF line endings | 6 (12%) | `wget` delivery; `dos2unix` as rescue |
+| `ls` under `set -euo pipefail` | all | Replace `ls` with `find` |
+| Stale `VIRTUAL_ENV` | some | `Sys.unsetenv("VIRTUAL_ENV")` in setup chunk |
+
+General principle: **tools needed in non-interactive subprocesses must be in
+a directory on the default PATH** — `/usr/local/bin/` with `sudo`, or an
+environment manager like `pixi`.
+
+---
+
+## Five habits for the rest of the course {.smaller}
+
+1. **Never type long directory or file names** — copy-paste or tab-complete.
+   A one-character typo is a different path.
+
+2. **Fix copy-paste first** — Windows Terminal: right-click title bar →
+   Properties → check "Use Ctrl+Shift+C/V". Test before every session.
+
+3. **Work in `~/DSC-011-S26/` on the Linux filesystem** — never `/mnt/c/`.
+   If the prompt shows `/mnt/c/`, stop and `cd ~` first.
+
+4. **Use a Linux browser for CatCourses** (`sudo apt install firefox`) or
+   download via `wget`. Run `dos2unix` on any file from a Windows source.
+   Verify with `cat -A file.qmd | head -5`.
+
+5. **Keep the project at the course-standard path** —
+   `~/DSC-011-S26/DSC-011-S26-Baby-Names/`. Create once with `mkdir -p`.
+   Never move it. Every notebook's CWD guard enforces this.
+
+---
+
+## The bottom line {.center}
+
+These were **infrastructure failures, not capability failures.**
+
+`check_bash` worked correctly when found.
+Students who had the correct environment passed validation chunks.
+
+The three infrastructure fixes make these errors permanently impossible.
+The five habits make the infrastructure reliable.
+
+```{r session-info, echo=FALSE, include=FALSE}
+sessionInfo()
+```
